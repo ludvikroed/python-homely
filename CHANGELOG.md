@@ -6,9 +6,16 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-### Added
+## [0.1.1] - 2026-03-17
 
-- Initial packaging, tests, CI, and release setup.
+### Changed
+
+- Reduced log noise and shortened identifiers in websocket and client logging.
+- Improved error classification so auth failures surface as auth errors in more SDK methods.
+
+### Fixed
+
+- Malformed successful API responses now raise SDK response errors instead of raw Python exceptions.
 
 ## [0.1.0] - 2026-03-16
 

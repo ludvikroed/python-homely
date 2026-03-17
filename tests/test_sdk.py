@@ -19,10 +19,18 @@ from homely import (
 class _FakeResponse:
     """Simple async HTTP response stub."""
 
-    def __init__(self, *, status: int, json_data=None, text_data: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        status: int,
+        json_data=None,
+        text_data: str = "",
+        json_exc: Exception | None = None,
+    ) -> None:
         self.status = status
         self._json_data = json_data
         self._text_data = text_data
+        self._json_exc = json_exc
 
     async def __aenter__(self):
         return self
@@ -31,6 +39,8 @@ class _FakeResponse:
         return False
 
     async def json(self):
+        if self._json_exc is not None:
+            raise self._json_exc
         return self._json_data
 
     async def text(self):
@@ -77,7 +87,7 @@ class _FakeAsyncCallable:
 async def test_sdk_exports_public_symbols():
     """The SDK should expose a clean public surface."""
     assert auth_header_value("token") == "Bearer token"
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.1.1"
 
 
 async def test_authenticate_returns_typed_token():
@@ -133,6 +143,18 @@ async def test_refresh_access_token_raises_connection_error_on_timeout():
         raise AssertionError("Expected HomelyConnectionError")
 
 
+async def test_refresh_access_token_raises_auth_error_on_expired_refresh_token():
+    """Refresh auth failures should surface as HomelyAuthError."""
+    client = HomelyClient(_FakeSession(post_response=_FakeResponse(status=400)))
+
+    try:
+        await client.refresh_access_token("refresh-token")
+    except HomelyAuthError:
+        pass
+    else:
+        raise AssertionError("Expected HomelyAuthError")
+
+
 async def test_get_locations_or_raise_raises_connection_error():
     """Location lookup failures should raise HomelyConnectionError."""
     client = HomelyClient(_FakeSession(get_exc=aiohttp.ClientError("boom")))
@@ -143,6 +165,18 @@ async def test_get_locations_or_raise_raises_connection_error():
         pass
     else:
         raise AssertionError("Expected HomelyConnectionError")
+
+
+async def test_get_locations_or_raise_raises_auth_error_on_unauthorized():
+    """Unauthorized location lookups should raise HomelyAuthError."""
+    client = HomelyClient(_FakeSession(get_response=_FakeResponse(status=401)))
+
+    try:
+        await client.get_locations_or_raise("token")
+    except HomelyAuthError:
+        pass
+    else:
+        raise AssertionError("Expected HomelyAuthError")
 
 
 async def test_get_home_data_or_raise_raises_response_error():
@@ -161,20 +195,67 @@ async def test_get_home_data_or_raise_raises_response_error():
         raise AssertionError("Expected HomelyResponseError")
 
 
+async def test_authenticate_raises_response_error_on_malformed_success_payload():
+    """Malformed successful auth responses should raise HomelyResponseError."""
+    client = HomelyClient(
+        _FakeSession(post_response=_FakeResponse(status=200, json_data={"refresh_token": "refresh"}))
+    )
+
+    try:
+        await client.authenticate("user", "pass")
+    except HomelyResponseError as err:
+        assert err.status == 200
+    else:
+        raise AssertionError("Expected HomelyResponseError")
+
+
+async def test_get_locations_or_raise_raises_response_error_on_malformed_success_payload():
+    """Malformed successful location responses should raise HomelyResponseError."""
+    client = HomelyClient(_FakeSession(get_response=_FakeResponse(status=200, json_data={"bad": "payload"})))
+
+    try:
+        await client.get_locations_or_raise("token")
+    except HomelyResponseError as err:
+        assert err.status == 200
+    else:
+        raise AssertionError("Expected HomelyResponseError")
+
+
+async def test_get_home_data_or_raise_raises_response_error_on_invalid_json():
+    """Malformed successful location payloads should raise HomelyResponseError."""
+    client = HomelyClient(
+        _FakeSession(
+            get_response=_FakeResponse(status=200, json_exc=ValueError("bad json"))
+        )
+    )
+
+    try:
+        await client.get_home_data_or_raise("token", "loc-1")
+    except HomelyResponseError as err:
+        assert err.status == 200
+    else:
+        raise AssertionError("Expected HomelyResponseError")
+
+
 async def test_websocket_public_aliases_cover_package_api():
     """The websocket client should expose package-friendly aliases."""
     ws = HomelyWebSocket(
-        location_id="loc-1",
+        location_id="11111111-2222-3333-4444-555555555555",
         token="token",
         on_data_update=lambda _data: None,
-        context_id="ctx-1",
+        context_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     )
 
-    assert ws.context_id == "ctx-1"
-    assert ws.entry_id == "ctx-1"
+    assert ws.context_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert ws.entry_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
     ws.set_token("new-token")
     assert ws.token == "new-token"
+    assert ws._ctx("99999999-8888-7777-6666-555555555555") == (
+        "context_id=aaaaaaaa... "
+        "location_id=11111111... "
+        "device_id=99999999..."
+    )
 
 
 async def test_websocket_connect_or_raise_uses_typed_exception():

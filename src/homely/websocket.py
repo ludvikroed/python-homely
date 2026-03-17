@@ -14,6 +14,17 @@ from .exceptions import HomelyWebSocketError
 _LOGGER = logging.getLogger(__name__)
 
 
+def _log_identifier(value: str | int | None) -> str | None:
+    """Return a shortened identifier suitable for logs."""
+    if value is None:
+        return None
+
+    text = str(value)
+    if len(text) <= 8:
+        return text
+    return f"{text[:8]}..."
+
+
 class HomelyWebSocket:
     """WebSocket client for Homely using Socket.IO."""
 
@@ -45,9 +56,12 @@ class HomelyWebSocket:
 
     def _ctx(self, device_id: str | None = None) -> str:
         """Build consistent log context."""
-        base = f"context_id={self.context_id} location_id={self.location_id}"
+        base = (
+            f"context_id={_log_identifier(self.context_id)} "
+            f"location_id={_log_identifier(self.location_id)}"
+        )
         if device_id:
-            return f"{base} device_id={device_id}"
+            return f"{base} device_id={_log_identifier(device_id)}"
         return base
 
     @property
@@ -82,14 +96,14 @@ class HomelyWebSocket:
 
         if status_changed:
             if status == "Connected":
-                _LOGGER.info("WebSocket connected %s", self._ctx())
+                _LOGGER.debug("WebSocket connected %s", self._ctx())
             elif status == "Disconnected":
                 if reason and self._should_warn_disconnect(reason):
-                    _LOGGER.warning("WebSocket disconnected %s (%s)", self._ctx(), reason)
+                    _LOGGER.info("WebSocket disconnected %s (%s)", self._ctx(), reason)
                 elif reason:
                     _LOGGER.debug("WebSocket disconnected %s (%s)", self._ctx(), reason)
                 else:
-                    _LOGGER.warning("WebSocket disconnected %s", self._ctx())
+                    _LOGGER.info("WebSocket disconnected %s", self._ctx())
             else:
                 if reason:
                     _LOGGER.debug(
@@ -198,14 +212,14 @@ class HomelyWebSocket:
 
         self._reconnect_task = loop.create_task(self._reconnect_loop())
         if reason:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Started reconnect loop %s (%s). interval=%ss, retries=infinite",
                 self._ctx(),
                 reason,
                 self._reconnect_interval,
             )
         else:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Started reconnect loop %s. interval=%ss, retries=infinite",
                 self._ctx(),
                 self._reconnect_interval,
@@ -228,11 +242,11 @@ class HomelyWebSocket:
             _LOGGER.debug("WebSocket reconnect attempt %s started %s", attempt, self._ctx())
             success = await self.connect(from_reconnect_loop=True)
             if success:
-                _LOGGER.info("WebSocket reconnect attempt %s succeeded %s", attempt, self._ctx())
+                _LOGGER.debug("WebSocket reconnect attempt %s succeeded %s", attempt, self._ctx())
                 return
 
-            if attempt == 1 or attempt % self._reconnect_warn_every == 0:
-                _LOGGER.warning(
+            if attempt % self._reconnect_warn_every == 0:
+                _LOGGER.info(
                     "WebSocket reconnect attempt %s failed %s. Retrying in %s seconds",
                     attempt,
                     self._ctx(),
