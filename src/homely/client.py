@@ -125,7 +125,8 @@ class HomelyClient:
                         return None, response.status
                     if not isinstance(parsed, dict):
                         _LOGGER.debug(
-                            "Token fetch returned unexpected payload type status=%s payload_type=%s",
+                            "Token fetch returned unexpected payload type "
+                            "status=%s payload_type=%s",
                             response.status,
                             type(parsed).__name__,
                         )
@@ -185,7 +186,8 @@ class HomelyClient:
                         return None, response.status
                     if not isinstance(parsed, dict):
                         _LOGGER.debug(
-                            "Token refresh returned unexpected payload type status=%s payload_type=%s",
+                            "Token refresh returned unexpected payload type "
+                            "status=%s payload_type=%s",
                             response.status,
                             type(parsed).__name__,
                         )
@@ -246,7 +248,8 @@ class HomelyClient:
                         return None, response.status
                     if not isinstance(parsed, list):
                         _LOGGER.debug(
-                            "Locations fetch returned unexpected payload type status=%s payload_type=%s",
+                            "Locations fetch returned unexpected payload type "
+                            "status=%s payload_type=%s",
                             response.status,
                             type(parsed).__name__,
                         )
@@ -303,7 +306,8 @@ class HomelyClient:
                         parsed = await response.json()
                     except (aiohttp.ContentTypeError, TypeError, ValueError) as err:
                         _LOGGER.debug(
-                            "Location data fetch returned invalid JSON status=%s location_id=%s: %s",
+                            "Location data fetch returned invalid JSON "
+                            "status=%s location_id=%s: %s",
                             response.status,
                             _log_identifier(location_id),
                             err,
@@ -311,7 +315,8 @@ class HomelyClient:
                         return None, response.status
                     if not isinstance(parsed, dict):
                         _LOGGER.debug(
-                            "Location data fetch returned unexpected payload type status=%s location_id=%s payload_type=%s",
+                            "Location data fetch returned unexpected payload "
+                            "type status=%s location_id=%s payload_type=%s",
                             response.status,
                             _log_identifier(location_id),
                             type(parsed).__name__,

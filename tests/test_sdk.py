@@ -198,7 +198,12 @@ async def test_get_home_data_or_raise_raises_response_error():
 async def test_authenticate_raises_response_error_on_malformed_success_payload():
     """Malformed successful auth responses should raise HomelyResponseError."""
     client = HomelyClient(
-        _FakeSession(post_response=_FakeResponse(status=200, json_data={"refresh_token": "refresh"}))
+        _FakeSession(
+            post_response=_FakeResponse(
+                status=200,
+                json_data={"refresh_token": "refresh"},
+            )
+        )
     )
 
     try:
@@ -211,7 +216,14 @@ async def test_authenticate_raises_response_error_on_malformed_success_payload()
 
 async def test_get_locations_or_raise_raises_response_error_on_malformed_success_payload():
     """Malformed successful location responses should raise HomelyResponseError."""
-    client = HomelyClient(_FakeSession(get_response=_FakeResponse(status=200, json_data={"bad": "payload"})))
+    client = HomelyClient(
+        _FakeSession(
+            get_response=_FakeResponse(
+                status=200,
+                json_data={"bad": "payload"},
+            )
+        )
+    )
 
     try:
         await client.get_locations_or_raise("token")
