@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-homely"
+version = "0.1.0"
+description = "Async Python client for the Homely cloud API, built for Home Assistant but usable anywhere."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Ludvik Blichfeldt Rød" }
+]
+keywords = ["homely", "api", "websocket", "asyncio", "home-automation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Home Automation",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "aiohttp>=3.9.0,<4.0.0",
+  "python-socketio>=5.11.0,<6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ludvikroed/python-homely"
+Documentation = "https://github.com/ludvikroed/python-homely#readme"
+Source = "https://github.com/ludvikroed/python-homely"
+Issues = "https://github.com/ludvikroed/python-homely/issues"
+Changelog = "https://github.com/ludvikroed/python-homely/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.2",
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "ruff>=0.8.0",
+  "twine>=6.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+cache_dir = "/tmp/python-homely-pytest-cache"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
