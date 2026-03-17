@@ -93,3 +93,7 @@ Main exports:
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+⭐ If you find this integration useful, please consider giving it a star on [GitHub](https://github.com/ludvikroed/python-homely)! ⭐
+
