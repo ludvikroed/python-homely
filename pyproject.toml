@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-homely"
-version = "0.1.1"
+version = "0.1.2"
 description = "Async Python client for the Homely cloud API, built for Home Assistant but usable anywhere."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -50,6 +50,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+homely = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

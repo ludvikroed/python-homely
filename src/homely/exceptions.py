@@ -23,10 +23,14 @@ class HomelyResponseError(HomelyError):
         *,
         status: int | None = None,
         body: str | None = None,
+        body_preview: str | None = None,
     ) -> None:
         """Initialize the exception with optional response details."""
         super().__init__(message)
         self.status = status
+        if body_preview is None:
+            body_preview = body
+        self.body_preview = body_preview
         self.body = body
 
 

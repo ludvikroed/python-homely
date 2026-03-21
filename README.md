@@ -69,14 +69,23 @@ async def main() -> None:
 
 - `authenticate(username, password) -> TokenResponse`
 - `refresh_access_token(refresh_token) -> TokenResponse`
+- `fetch_token_details(username, password) -> TokenEndpointResult`
+- `fetch_refresh_token_details(refresh_token) -> TokenEndpointResult`
 - `get_locations_or_raise(token) -> list[dict]`
 - `get_home_data_or_raise(token, location_id) -> dict`
 - `HomelyWebSocket(...).connect_or_raise()`
+
+Legacy compatibility helpers remain available:
+
+- `fetch_token_with_reason(username, password) -> tuple[dict | None, str | None]`
+- `fetch_token(username, password) -> dict | None`
+- `fetch_refresh_token(refresh_token) -> dict | None`
 
 Main exports:
 
 - `HomelyClient`
 - `HomelyWebSocket`
+- `TokenEndpointResult`
 - `TokenResponse`
 - `HomelyConnectionError`
 - `HomelyAuthError`
@@ -88,12 +97,33 @@ Main exports:
 - `HomelyConnectionError`: network or service unavailable
 - `HomelyAuthError`: invalid credentials or rejected token
 - `HomelyResponseError`: unexpected response or HTTP failure
+  Carries `status` and `body_preview` when available.
 - `HomelyWebSocketError`: websocket could not be established
+
+## Token Diagnostics
+
+If you need more than success/failure, use the detailed token helpers:
+
+```python
+result = await client.fetch_refresh_token_details(refresh_token)
+if result.ok:
+    print(result.token.access_token)
+else:
+    print(result.reason, result.status, result.detail, result.body_preview)
+```
+
+`TokenEndpointResult.reason` can distinguish between invalid credentials, invalid refresh
+tokens, network errors, timeouts, malformed JSON, malformed payloads, empty responses, and
+unexpected HTTP failures.
+
+## Websocket Note
+
+Refreshing an access token does not require forcing an already-connected websocket to reconnect.
+The websocket token only matters when a new websocket connection is established or re-established.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
 
-⭐ If you find this integration useful, please consider giving it a star on [GitHub](https://github.com/ludvikroed/python-homely)! ⭐
-
+⭐ If you find this package useful, please consider giving it a star on [GitHub](https://github.com/ludvikroed/python-homely)! ⭐

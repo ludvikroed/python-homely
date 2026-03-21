@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import aiohttp
+import pytest
 
 from homely import (
     HomelyAuthError,
@@ -10,6 +11,7 @@ from homely import (
     HomelyResponseError,
     HomelyWebSocket,
     HomelyWebSocketError,
+    TokenEndpointResult,
     TokenResponse,
     __version__,
     auth_header_value,
@@ -87,7 +89,7 @@ class _FakeAsyncCallable:
 async def test_sdk_exports_public_symbols():
     """The SDK should expose a clean public surface."""
     assert auth_header_value("token") == "Bearer token"
-    assert __version__ == "0.1.1"
+    assert __version__ == "0.1.2"
 
 
 async def test_authenticate_returns_typed_token():
@@ -119,6 +121,84 @@ async def test_authenticate_returns_typed_token():
     )
 
 
+async def test_fetch_token_details_returns_typed_result():
+    """Detailed token fetches should preserve both token and metadata."""
+    client = HomelyClient(
+        _FakeSession(
+            post_response=_FakeResponse(
+                status=200,
+                json_data={
+                    "access_token": "token",
+                    "refresh_token": "refresh",
+                    "expires_in": 1800,
+                },
+            )
+        )
+    )
+
+    result = await client.fetch_token_details("user", "pass")
+
+    assert result == TokenEndpointResult(
+        token=TokenResponse(
+            access_token="token",
+            refresh_token="refresh",
+            expires_in=1800,
+            raw={
+                "access_token": "token",
+                "refresh_token": "refresh",
+                "expires_in": 1800,
+            },
+        ),
+        status=200,
+    )
+    assert result.ok is True
+    assert result.raw == {
+        "access_token": "token",
+        "refresh_token": "refresh",
+        "expires_in": 1800,
+    }
+
+
+async def test_fetch_token_details_returns_invalid_auth_reason():
+    """Detailed token fetches should classify auth failures explicitly."""
+    client = HomelyClient(
+        _FakeSession(
+            post_response=_FakeResponse(status=401, text_data='{"error":"unauthorized"}')
+        )
+    )
+
+    result = await client.fetch_token_details("user", "pass")
+
+    assert result.ok is False
+    assert result.reason == "invalid_auth"
+    assert result.status == 401
+    assert result.body_preview == '{"error":"unauthorized"}'
+
+
+async def test_fetch_token_details_returns_timeout_reason():
+    """Detailed token fetches should preserve timeout classification."""
+    client = HomelyClient(_FakeSession(post_exc=TimeoutError()))
+
+    result = await client.fetch_token_details("user", "pass")
+
+    assert result.reason == "timeout"
+    assert result.detail == "TimeoutError"
+
+
+async def test_fetch_token_with_reason_remains_backward_compatible():
+    """Legacy coarse token reasons should still be preserved."""
+    client = HomelyClient(
+        _FakeSession(
+            post_response=_FakeResponse(status=200, json_exc=ValueError("bad json"))
+        )
+    )
+
+    response, reason = await client.fetch_token_with_reason("user", "pass")
+
+    assert response is None
+    assert reason == "cannot_connect"
+
+
 async def test_authenticate_raises_auth_error():
     """Authentication failures should raise HomelyAuthError."""
     client = HomelyClient(_FakeSession(post_response=_FakeResponse(status=401)))
@@ -129,6 +209,26 @@ async def test_authenticate_raises_auth_error():
         pass
     else:
         raise AssertionError("Expected HomelyAuthError")
+
+
+async def test_authenticate_raises_response_error_with_body_preview_on_invalid_json():
+    """Malformed successful auth payloads should include a short body preview."""
+    client = HomelyClient(
+        _FakeSession(
+            post_response=_FakeResponse(
+                status=200,
+                text_data="not-json",
+                json_exc=ValueError("bad json"),
+            )
+        )
+    )
+
+    with pytest.raises(HomelyResponseError) as err_info:
+        await client.authenticate("user", "pass")
+
+    assert err_info.value.status == 200
+    assert err_info.value.body_preview == "not-json"
+    assert err_info.value.body == "not-json"
 
 
 async def test_refresh_access_token_raises_connection_error_on_timeout():
@@ -153,6 +253,99 @@ async def test_refresh_access_token_raises_auth_error_on_expired_refresh_token()
         pass
     else:
         raise AssertionError("Expected HomelyAuthError")
+
+
+async def test_fetch_refresh_token_details_returns_http_error_with_preview():
+    """Detailed refresh fetches should include status and body previews."""
+    client = HomelyClient(
+        _FakeSession(post_response=_FakeResponse(status=503, text_data="upstream down"))
+    )
+
+    result = await client.fetch_refresh_token_details("refresh-token")
+
+    assert result.reason == "http_error"
+    assert result.status == 503
+    assert result.body_preview == "upstream down"
+
+
+async def test_fetch_refresh_token_details_returns_invalid_payload_for_non_dict_success():
+    """Detailed refresh fetches should reject non-dict success payloads explicitly."""
+    client = HomelyClient(
+        _FakeSession(post_response=_FakeResponse(status=200, json_data=["bad-payload"]))
+    )
+
+    result = await client.fetch_refresh_token_details("refresh-token")
+
+    assert result.token is None
+    assert result.reason == "invalid_payload"
+    assert result.status == 200
+    assert result.detail == "payload_type=list"
+    assert result.body_preview == "['bad-payload']"
+
+
+async def test_fetch_refresh_token_wrapper_remains_backward_compatible():
+    """The legacy refresh wrapper should still return the raw payload on success."""
+    client = HomelyClient(
+        _FakeSession(
+            post_response=_FakeResponse(
+                status=200,
+                json_data={
+                    "access_token": "token",
+                    "refresh_token": "refresh",
+                    "expires_in": 120,
+                },
+            )
+        )
+    )
+
+    response = await client.fetch_refresh_token("refresh-token")
+
+    assert response == {
+        "access_token": "token",
+        "refresh_token": "refresh",
+        "expires_in": 120,
+    }
+
+
+async def test_refresh_access_token_raises_response_error_with_preview():
+    """Refresh HTTP failures should surface response metadata for callers."""
+    client = HomelyClient(
+        _FakeSession(post_response=_FakeResponse(status=503, text_data="upstream down"))
+    )
+
+    with pytest.raises(HomelyResponseError) as err_info:
+        await client.refresh_access_token("refresh-token")
+
+    assert err_info.value.status == 503
+    assert err_info.value.body_preview == "upstream down"
+    assert err_info.value.body == "upstream down"
+
+
+async def test_response_error_preserves_body_and_preview_separately():
+    """Response errors should keep body and body_preview as separate fields."""
+    err = HomelyResponseError(
+        "bad response",
+        status=502,
+        body="full body",
+        body_preview="trimmed preview",
+    )
+
+    assert err.status == 502
+    assert err.body == "full body"
+    assert err.body_preview == "trimmed preview"
+
+
+async def test_response_error_uses_body_as_preview_when_preview_is_missing():
+    """Response errors should keep legacy body-only construction working."""
+    err = HomelyResponseError(
+        "bad response",
+        status=502,
+        body="full body",
+    )
+
+    assert err.status == 502
+    assert err.body == "full body"
+    assert err.body_preview == "full body"
 
 
 async def test_get_locations_or_raise_raises_connection_error():

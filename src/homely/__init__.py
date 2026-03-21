@@ -1,6 +1,6 @@
 """Reusable Homely client package extracted from the integration."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from .client import (
     BASE_URL,
@@ -15,7 +15,7 @@ from .exceptions import (
     HomelyResponseError,
     HomelyWebSocketError,
 )
-from .models import TokenResponse
+from .models import TokenEndpointResult, TokenResponse
 from .websocket import HomelyWebSocket
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "HomelyAuthError",
     "HomelyResponseError",
     "HomelyWebSocketError",
+    "TokenEndpointResult",
     "TokenResponse",
     "auth_header_value",
 ]

@@ -6,6 +6,22 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-19
+
+### Added
+
+- Added `TokenEndpointResult` with detailed auth/refresh failure metadata.
+- Added `fetch_token_details()` and `fetch_refresh_token_details()` for typed, non-raising
+  token endpoint diagnostics.
+
+### Changed
+
+- `authenticate()` and `refresh_access_token()` now classify malformed responses, HTTP failures,
+  auth failures, and network failures more precisely.
+- `HomelyResponseError` now carries `body_preview` in addition to HTTP status metadata.
+- Legacy token helpers remain available as compatibility wrappers on top of the new detailed
+  token methods.
+
 ## [0.1.1] - 2026-03-17
 
 ### Changed

@@ -2,7 +2,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+TokenFailureReason = Literal[
+    "invalid_auth",
+    "invalid_refresh_token",
+    "http_error",
+    "network_error",
+    "timeout",
+    "invalid_json",
+    "invalid_payload",
+    "empty_response",
+]
 
 
 @dataclass(slots=True)
@@ -29,3 +40,26 @@ class TokenResponse:
             expires_in=parsed_expires_in,
             raw=dict(data),
         )
+
+
+@dataclass(slots=True)
+class TokenEndpointResult:
+    """Detailed result returned by authentication and refresh helpers."""
+
+    token: TokenResponse | None = None
+    reason: TokenFailureReason | None = None
+    status: int | None = None
+    detail: str | None = None
+    body_preview: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return whether the request produced a usable token response."""
+        return self.token is not None
+
+    @property
+    def raw(self) -> dict[str, Any] | None:
+        """Return the raw token payload when available."""
+        if self.token is None:
+            return None
+        return self.token.raw

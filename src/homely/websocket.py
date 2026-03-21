@@ -45,9 +45,9 @@ class HomelyWebSocket:
         self.location_id = location_id
         self.token = token
         self.on_data_update = on_data_update
-        self.socket = None
+        self.socket: Any | None = None
         self._is_closing = False
-        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
         self._reconnect_interval = 300
         self._reconnect_warn_every = 12
         self._status_update_callback = status_update_callback
@@ -268,7 +268,7 @@ class HomelyWebSocket:
             return False
 
         try:
-            import socketio
+            import socketio  # type: ignore[import-untyped]
         except ImportError:
             _LOGGER.error("python-socketio is not installed. WebSocket disabled %s.", self._ctx())
             self._set_status("Disconnected", "socketio missing")
@@ -293,34 +293,35 @@ class HomelyWebSocket:
                 engineio_logger=False,
             )
 
-            @self.socket.event
-            async def connect():
+            async def connect() -> None:
                 self._on_connect()
 
-            @self.socket.event
-            async def disconnect(*args):
+            async def disconnect(*args: Any) -> None:
                 self._on_disconnect(self._build_reason(args[0] if args else None))
 
-            @self.socket.event
-            async def message(data):
+            async def message(data: Any) -> None:
                 self._on_event(data)
 
-            @self.socket.event
-            async def event(data):
+            async def event(data: Any) -> None:
                 self._on_event(data)
 
-            @self.socket.on("*")
-            async def catch_all(event, data):
+            async def catch_all(event: str, data: Any) -> None:
                 if event not in ("connect", "disconnect", "message", "event", "connect_error"):
                     _LOGGER.debug("WebSocket event %s type=%s", self._ctx(), event)
                     self._on_event({"type": event, "payload": data})
 
-            @self.socket.event
-            async def connect_error(data):
+            async def connect_error(data: Any) -> None:
                 raw_reason = self._build_reason(data)
                 reason = f"connect_error: {raw_reason}" if raw_reason else "connect_error"
                 _LOGGER.debug("WebSocket connect_error %s: %s", self._ctx(), reason)
                 self._on_disconnect(reason)
+
+            self.socket.on("connect", connect)
+            self.socket.on("disconnect", disconnect)
+            self.socket.on("message", message)
+            self.socket.on("event", event)
+            self.socket.on("*", catch_all)
+            self.socket.on("connect_error", connect_error)
 
             bearer_token = self._bearer_value(self.token)
             query = urlencode(
