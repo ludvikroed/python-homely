@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
@@ -12,6 +13,25 @@ import aiohttp
 from .exceptions import HomelyWebSocketError
 
 _LOGGER = logging.getLogger(__name__)
+WEBSOCKET_STATUS_OPTIONS = (
+    "not_initialized",
+    "connecting",
+    "connected",
+    "disconnected",
+    "unknown",
+)
+_WEBSOCKET_STATUS_OPTION_SET = frozenset(WEBSOCKET_STATUS_OPTIONS)
+
+
+@dataclass(frozen=True)
+class WebSocketConnectionState:
+    """Normalized websocket status shared across integrations and tooling."""
+
+    connected: bool
+    reported_status: str
+    effective_status: str
+    reason: str | None
+    status_mismatch: bool
 
 
 def _log_identifier(value: str | int | None) -> str | None:
@@ -23,6 +43,37 @@ def _log_identifier(value: str | int | None) -> str | None:
     if len(text) <= 8:
         return text
     return f"{text[:8]}..."
+
+
+def normalize_websocket_status(value: Any) -> str:
+    """Convert websocket labels to stable enum values."""
+    if not isinstance(value, str):
+        return "unknown"
+
+    normalized = value.strip().lower().replace(" ", "_")
+    return (
+        normalized
+        if normalized in _WEBSOCKET_STATUS_OPTION_SET
+        else "unknown"
+    )
+
+
+def _socket_transport_is_connected(socket: Any | None) -> bool:
+    """Return True when the Socket.IO or Engine.IO transport is still alive."""
+    if socket is None:
+        return False
+
+    try:
+        if bool(socket.connected):
+            return True
+    except Exception:
+        pass
+
+    engineio_client = getattr(socket, "eio", None)
+    try:
+        return str(getattr(engineio_client, "state", "")).lower() == "connected"
+    except Exception:
+        return False
 
 
 class HomelyWebSocket:
@@ -48,7 +99,7 @@ class HomelyWebSocket:
         self.socket: Any | None = None
         self._is_closing = False
         self._reconnect_task: asyncio.Task[None] | None = None
-        self._reconnect_interval = 300
+        self._reconnect_interval = self._reconnect_interval_for_attempt(1)
         self._reconnect_warn_every = 12
         self._status_update_callback = status_update_callback
         self._status = "Not initialized"
@@ -63,6 +114,14 @@ class HomelyWebSocket:
         if device_id:
             return f"{base} device_id={_log_identifier(device_id)}"
         return base
+
+    def _reconnect_interval_for_attempt(self, attempt: int) -> int:
+        """Return reconnect delay for the given attempt number."""
+        if attempt <= 3:
+            return 10
+        if attempt <= 8:
+            return 60
+        return 300
 
     @property
     def websocket_url(self) -> str:
@@ -205,6 +264,8 @@ class HomelyWebSocket:
         if self._reconnect_task and not self._reconnect_task.done():
             return
 
+        self._reconnect_interval = self._reconnect_interval_for_attempt(1)
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -232,7 +293,7 @@ class HomelyWebSocket:
         self._reconnect_task = None
 
     async def _reconnect_loop(self) -> None:
-        """Try reconnect forever at fixed interval."""
+        """Reconnect with a short burst first, then slower retries."""
         attempt = 0
         while not self._is_closing:
             if self.is_connected():
@@ -245,6 +306,7 @@ class HomelyWebSocket:
                 _LOGGER.debug("WebSocket reconnect attempt %s succeeded %s", attempt, self._ctx())
                 return
 
+            self._reconnect_interval = self._reconnect_interval_for_attempt(attempt + 1)
             if attempt % self._reconnect_warn_every == 0:
                 _LOGGER.info(
                     "WebSocket reconnect attempt %s failed %s. Retrying in %s seconds",
@@ -390,14 +452,45 @@ class HomelyWebSocket:
 
     async def reconnect_with_token(self, token: str) -> None:
         """Update token and request reconnect if currently disconnected."""
-        self.update_token(token, reconnect_if_disconnected=True)
+        self.sync_token(token)
 
     def is_connected(self) -> bool:
-        """Return True if socket client reports connected."""
+        """Return True when the websocket transport looks alive."""
         try:
-            return self.socket is not None and bool(self.socket.connected)
+            return _socket_transport_is_connected(self.socket)
         except Exception:
             return False
+
+    def reported_connection_status(self) -> str:
+        """Return normalized status reported by the websocket client itself."""
+        status = normalize_websocket_status(self.status)
+        if status != "unknown" and not (
+            status == "not_initialized" and self.is_connected()
+        ):
+            return status
+        return "connected" if self.is_connected() else "disconnected"
+
+    def connection_state(self) -> WebSocketConnectionState:
+        """Return a normalized view of websocket health."""
+        reported_status = self.reported_connection_status()
+        connected = self.is_connected()
+
+        if connected:
+            effective_status = "connected"
+        elif reported_status in {"connecting", "not_initialized"}:
+            effective_status = reported_status
+        elif reported_status == "unknown":
+            effective_status = "disconnected"
+        else:
+            effective_status = "disconnected"
+
+        return WebSocketConnectionState(
+            connected=connected,
+            reported_status=reported_status,
+            effective_status=effective_status,
+            reason=self.status_reason,
+            status_mismatch=reported_status != effective_status,
+        )
 
     def update_token(self, token: str, reconnect_if_disconnected: bool = False) -> None:
         """Update token used by next connect/reconnect attempt."""
@@ -408,6 +501,22 @@ class HomelyWebSocket:
             _LOGGER.debug("WebSocket token updated %s", self._ctx())
         if reconnect_if_disconnected and not self.is_connected() and not self._is_closing:
             self._start_reconnect_loop("token changed while disconnected")
+
+    def sync_token(self, token: str) -> str:
+        """Update token and request reconnect only when the socket is actually down."""
+        if not token:
+            return "ignored_empty"
+
+        reconnect_if_disconnected = not self.is_connected()
+        self.update_token(
+            token,
+            reconnect_if_disconnected=reconnect_if_disconnected,
+        )
+        return (
+            "reconnect_if_disconnected"
+            if reconnect_if_disconnected
+            else "no_reconnect"
+        )
 
     def set_token(self, token: str, reconnect_if_disconnected: bool = False) -> None:
         """Alias for update_token, matching common client-library conventions."""

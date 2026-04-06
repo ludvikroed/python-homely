@@ -1,10 +1,13 @@
 """Tests for the public python-homely SDK package."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import aiohttp
 import pytest
 
 from homely import (
+    WEBSOCKET_STATUS_OPTIONS,
     HomelyAuthError,
     HomelyClient,
     HomelyConnectionError,
@@ -15,6 +18,7 @@ from homely import (
     TokenResponse,
     __version__,
     auth_header_value,
+    normalize_websocket_status,
 )
 
 
@@ -89,7 +93,7 @@ class _FakeAsyncCallable:
 async def test_sdk_exports_public_symbols():
     """The SDK should expose a clean public surface."""
     assert auth_header_value("token") == "Bearer token"
-    assert __version__ == "0.1.2"
+    assert __version__ == "0.1.3"
 
 
 async def test_authenticate_returns_typed_token():
@@ -461,6 +465,62 @@ async def test_websocket_public_aliases_cover_package_api():
         "location_id=11111111... "
         "device_id=99999999..."
     )
+
+    assert normalize_websocket_status(" Connected ") == "connected"
+    assert tuple(WEBSOCKET_STATUS_OPTIONS) == (
+        "not_initialized",
+        "connecting",
+        "connected",
+        "disconnected",
+        "unknown",
+    )
+
+
+async def test_websocket_connection_state_uses_engineio_transport_health():
+    """Connection state should treat a live Engine.IO transport as connected."""
+    ws = HomelyWebSocket(
+        location_id="loc-1",
+        token="token",
+        on_data_update=lambda _data: None,
+    )
+    ws._status = "Connected"
+    ws.socket = SimpleNamespace(
+        connected=False,
+        eio=SimpleNamespace(state="connected"),
+    )
+
+    state = ws.connection_state()
+
+    assert state.connected is True
+    assert state.reported_status == "connected"
+    assert state.effective_status == "connected"
+    assert state.status_mismatch is False
+
+
+async def test_websocket_sync_token_only_reconnects_when_transport_is_down():
+    """Token sync should not nudge healthy sockets, but should reconnect dead ones."""
+    ws = HomelyWebSocket(
+        location_id="loc-1",
+        token="old-token",
+        on_data_update=lambda _data: None,
+    )
+
+    ws.socket = SimpleNamespace(connected=True)
+    assert ws.sync_token("fresh-token") == "no_reconnect"
+    assert ws.token == "fresh-token"
+
+    ws.socket = SimpleNamespace(connected=False, eio=SimpleNamespace(state="closed"))
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        reconnect_reasons: list[str | None] = []
+        monkeypatch.setattr(
+            ws,
+            "_start_reconnect_loop",
+            lambda reason=None: reconnect_reasons.append(reason),
+        )
+        result = ws.sync_token("newer-token")
+
+    assert result == "reconnect_if_disconnected"
+    assert reconnect_reasons == ["token changed while disconnected"]
 
 
 async def test_websocket_connect_or_raise_uses_typed_exception():
