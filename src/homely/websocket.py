@@ -98,6 +98,7 @@ class HomelyWebSocket:
         self.on_data_update = on_data_update
         self.socket: Any | None = None
         self._is_closing = False
+        self._cleaning_up_socket = False
         self._reconnect_task: asyncio.Task[None] | None = None
         self._reconnect_interval = self._reconnect_interval_for_attempt(1)
         self._reconnect_warn_every = 12
@@ -248,6 +249,8 @@ class HomelyWebSocket:
         if self._is_closing:
             self._set_status("Disconnected", "manual disconnect")
             return
+        if self._cleaning_up_socket:
+            return
         self._set_status("Disconnected", reason)
         if not self._is_closing:
             self._start_reconnect_loop("disconnect event")
@@ -341,10 +344,13 @@ class HomelyWebSocket:
             return True
 
         if self.socket is not None:
+            self._cleaning_up_socket = True
             try:
                 await asyncio.wait_for(self.socket.disconnect(), timeout=2)
             except Exception:
                 pass
+            finally:
+                self._cleaning_up_socket = False
             self.socket = None
 
         self._set_status("Connecting")
@@ -397,7 +403,7 @@ class HomelyWebSocket:
             await asyncio.wait_for(
                 self.socket.connect(
                     url,
-                    transports=["websocket", "polling"],
+                    transports=["websocket"],
                     headers={"Authorization": bearer_token},
                 ),
                 timeout=10,
