@@ -358,7 +358,7 @@ class HomelyWebSocket:
             self.socket = socketio.AsyncClient(
                 reconnection=False,
                 logger=False,
-                engineio_logger=False,
+                engineio_logger=logging.getLogger("engineio.client"),
             )
 
             async def connect() -> None:
@@ -403,7 +403,7 @@ class HomelyWebSocket:
             await asyncio.wait_for(
                 self.socket.connect(
                     url,
-                    transports=["websocket"],
+                    transports=["polling", "websocket"],
                     headers={"Authorization": bearer_token},
                 ),
                 timeout=10,
@@ -450,7 +450,6 @@ class HomelyWebSocket:
                     self.socket = None
         finally:
             self._set_status("Disconnected", "manual disconnect")
-            self._is_closing = False
 
     async def close(self) -> None:
         """Alias for disconnect, matching common client-library conventions."""
