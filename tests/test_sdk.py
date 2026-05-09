@@ -93,7 +93,7 @@ class _FakeAsyncCallable:
 async def test_sdk_exports_public_symbols():
     """The SDK should expose a clean public surface."""
     assert auth_header_value("token") == "Bearer token"
-    assert __version__ == "0.1.3"
+    assert __version__ == "0.1.5"
 
 
 async def test_authenticate_returns_typed_token():
