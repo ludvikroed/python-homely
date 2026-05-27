@@ -1,6 +1,8 @@
 """Reusable Homely client package extracted from the integration."""
 
-__version__ = "0.1.5"
+from importlib.metadata import version as _pkg_version
+
+__version__ = _pkg_version("python-homely")
 
 from .client import (
     BASE_URL,
