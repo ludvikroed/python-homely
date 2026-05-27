@@ -105,6 +105,7 @@ class HomelyWebSocket:
         self._status_update_callback = status_update_callback
         self._status = "Not initialized"
         self._status_reason: str | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def _ctx(self, device_id: str | None = None) -> str:
         """Build consistent log context."""
@@ -272,7 +273,13 @@ class HomelyWebSocket:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            loop = asyncio.get_event_loop()
+            loop = self._loop
+            if loop is None:
+                _LOGGER.error(
+                    "Cannot start reconnect loop: no event loop available %s",
+                    self._ctx(),
+                )
+                return
 
         self._reconnect_task = loop.create_task(self._reconnect_loop())
         if reason:
@@ -331,6 +338,12 @@ class HomelyWebSocket:
         if self._is_closing:
             _LOGGER.debug("Skipping websocket connect during shutdown %s", self._ctx())
             return False
+
+        if self._loop is None:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
 
         try:
             import socketio  # type: ignore[import-untyped]
@@ -403,7 +416,7 @@ class HomelyWebSocket:
             await asyncio.wait_for(
                 self.socket.connect(
                     url,
-                    transports=["polling", "websocket"],
+                    transports=["websocket"],
                     headers={"Authorization": bearer_token},
                 ),
                 timeout=10,
