@@ -189,6 +189,7 @@ class HomelyClient:
             payload=payload,
             invalid_reason="invalid_refresh_token",
             action="Token refresh",
+            extra_headers={"X-Forwarded-For": "0.0.0.0"},
         )
 
     async def fetch_refresh_token(self, refresh_token: str) -> dict[str, Any] | None:
@@ -217,12 +218,15 @@ class HomelyClient:
         payload: dict[str, Any],
         invalid_reason: TokenFailureReason,
         action: str,
+        extra_headers: dict[str, str] | None = None,
     ) -> TokenEndpointResult:
         """Post to a token endpoint and return a detailed typed result."""
         url = f"{self._base_url}{endpoint}"
 
         try:
-            async with self._session.post(url, json=payload, timeout=self._timeout) as response:
+            async with self._session.post(
+                url, json=payload, headers=extra_headers, timeout=self._timeout
+            ) as response:
                 body_preview = await self._response_text_preview(response)
                 if response.status in (200, 201):
                     try:
@@ -442,10 +446,18 @@ class HomelyClient:
                         )
                         return None, response.status
                     return parsed, response.status
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    body = await response.text()
+                except Exception:
+                    body = "<unreadable>"
                 _LOGGER.debug(
-                    "Location data fetch failed with status=%s location_id=%s",
+                    "Location data fetch failed with status=%s location_id=%s "
+                    "retry_after=%s body=%s",
                     response.status,
                     _log_identifier(location_id),
+                    retry_after,
+                    body[:500] if body else None,
                 )
                 return None, response.status
         except (aiohttp.ClientError, TimeoutError) as err:

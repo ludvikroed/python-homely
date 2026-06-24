@@ -89,12 +89,14 @@ class HomelyWebSocket:
         status_update_callback: Callable[[str, str | None], None] | None = None,
         context_id: str | None = None,
         entry_id: str | None = None,
+        partner_code: int | str | None = None,
     ) -> None:
         """Initialize WebSocket client."""
         self.context_id = context_id or entry_id
         self.entry_id = self.context_id
         self.location_id = location_id
         self.token = token
+        self.partner_code = partner_code
         self.on_data_update = on_data_update
         self.socket: Any | None = None
         self._is_closing = False
@@ -405,12 +407,13 @@ class HomelyWebSocket:
             self.socket.on("connect_error", connect_error)
 
             bearer_token = self._bearer_value(self.token)
-            query = urlencode(
-                {
-                    "locationId": str(self.location_id),
-                    "token": bearer_token,
-                }
-            )
+            query_params: dict[str, str] = {
+                "locationId": str(self.location_id),
+                "token": bearer_token,
+            }
+            if self.partner_code is not None:
+                query_params["partner"] = str(self.partner_code)
+            query = urlencode(query_params)
             url = f"{self.websocket_url}?{query}"
             _LOGGER.debug("WebSocket connecting %s to %s", self._ctx(), self.websocket_url)
             await asyncio.wait_for(
