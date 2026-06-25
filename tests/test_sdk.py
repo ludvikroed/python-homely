@@ -95,7 +95,7 @@ class _FakeAsyncCallable:
 async def test_sdk_exports_public_symbols():
     """The SDK should expose a clean public surface."""
     assert auth_header_value("token") == "Bearer token"
-    assert __version__ == "0.1.8"
+    assert __version__ == "0.1.9"
 
 
 async def test_authenticate_returns_typed_token():
@@ -497,6 +497,41 @@ async def test_websocket_connection_state_uses_engineio_transport_health():
     assert state.reported_status == "connected"
     assert state.effective_status == "connected"
     assert state.status_mismatch is False
+
+
+async def test_connect_keeps_engineio_logger_disabled(monkeypatch):
+    """SECURITY: the Engine.IO logger must stay off.
+
+    When enabled it logs the full connection URL, which carries the bearer
+    token in the query string (?token=Bearer <access_token>), leaking it to
+    the consuming application's logs.
+    """
+    import socketio
+
+    captured: dict[str, object] = {}
+
+    class _FakeSocket:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def on(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        async def connect(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    # connect() does a local `import socketio`, so patch the real module.
+    monkeypatch.setattr(socketio, "AsyncClient", _FakeSocket)
+
+    ws = HomelyWebSocket(
+        location_id="loc-1",
+        token="super-secret-token",
+        on_data_update=lambda _data: None,
+    )
+    await ws.connect()
+
+    assert captured.get("engineio_logger") is False
+    assert captured.get("logger") is False
 
 
 async def test_websocket_sync_token_only_reconnects_when_transport_is_down():

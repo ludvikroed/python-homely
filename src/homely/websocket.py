@@ -370,10 +370,13 @@ class HomelyWebSocket:
 
         self._set_status("Connecting")
         try:
+            # SECURITY: never enable the engineio logger. It logs the full
+            # connection URL, which carries the bearer token in the query
+            # string (?token=Bearer <access_token>), leaking it to HA logs.
             self.socket = socketio.AsyncClient(
                 reconnection=False,
                 logger=False,
-                engineio_logger=logging.getLogger("engineio.client"),
+                engineio_logger=False,
             )
 
             async def connect() -> None:
