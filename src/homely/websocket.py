@@ -414,8 +414,11 @@ class HomelyWebSocket:
                 "locationId": str(self.location_id),
                 "token": bearer_token,
             }
-            if self.partner_code is not None:
-                query_params["partner"] = str(self.partner_code)
+            # NOTE: do NOT send a "partner" query parameter. Homely's websocket
+            # server rejects it ("Partner <code> is not supported") and closes
+            # the connection immediately, causing a connect/disconnect loop.
+            # partner_code is accepted for API compatibility but intentionally
+            # unused here.
             query = urlencode(query_params)
             url = f"{self.websocket_url}?{query}"
             _LOGGER.debug("WebSocket connecting %s to %s", self._ctx(), self.websocket_url)

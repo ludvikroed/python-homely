@@ -509,6 +509,7 @@ async def test_connect_keeps_engineio_logger_disabled(monkeypatch):
     import socketio
 
     captured: dict[str, object] = {}
+    connect_args: dict[str, object] = {}
 
     class _FakeSocket:
         def __init__(self, **kwargs: object) -> None:
@@ -517,8 +518,8 @@ async def test_connect_keeps_engineio_logger_disabled(monkeypatch):
         def on(self, *args: object, **kwargs: object) -> None:
             return None
 
-        async def connect(self, *args: object, **kwargs: object) -> None:
-            return None
+        async def connect(self, url: str, *args: object, **kwargs: object) -> None:
+            connect_args["url"] = url
 
     # connect() does a local `import socketio`, so patch the real module.
     monkeypatch.setattr(socketio, "AsyncClient", _FakeSocket)
@@ -527,11 +528,15 @@ async def test_connect_keeps_engineio_logger_disabled(monkeypatch):
         location_id="loc-1",
         token="super-secret-token",
         on_data_update=lambda _data: None,
+        partner_code=1275,
     )
     await ws.connect()
 
     assert captured.get("engineio_logger") is False
     assert captured.get("logger") is False
+    # Homely rejects a "partner" query parameter and closes the connection,
+    # so it must never be sent even when partner_code is set.
+    assert "partner" not in str(connect_args.get("url"))
 
 
 async def test_websocket_sync_token_only_reconnects_when_transport_is_down():
