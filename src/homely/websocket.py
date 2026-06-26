@@ -410,15 +410,19 @@ class HomelyWebSocket:
             self.socket.on("connect_error", connect_error)
 
             bearer_token = self._bearer_value(self.token)
+            # The token MUST be in the query string: Homely's server replies
+            # {"message":"Invalid JWT"} and disconnects if it is sent only via the
+            # Authorization header (verified live). It is therefore unavoidable in
+            # the URL, which is why the Engine.IO logger must stay off (it would
+            # log this URL with the token).
+            # NOTE: do NOT send a "partner" query parameter. Homely rejects it
+            # ("Partner <code> is not supported") and closes the connection,
+            # causing a connect/disconnect loop. partner_code is accepted for API
+            # compatibility but intentionally unused here.
             query_params: dict[str, str] = {
                 "locationId": str(self.location_id),
                 "token": bearer_token,
             }
-            # NOTE: do NOT send a "partner" query parameter. Homely's websocket
-            # server rejects it ("Partner <code> is not supported") and closes
-            # the connection immediately, causing a connect/disconnect loop.
-            # partner_code is accepted for API compatibility but intentionally
-            # unused here.
             query = urlencode(query_params)
             url = f"{self.websocket_url}?{query}"
             _LOGGER.debug("WebSocket connecting %s to %s", self._ctx(), self.websocket_url)
