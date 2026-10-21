@@ -1,6 +1,7 @@
 """Tests for the public python-homely SDK package."""
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import aiohttp
@@ -537,6 +538,101 @@ async def test_connect_keeps_engineio_logger_disabled(monkeypatch):
     # Homely rejects a "partner" query parameter and closes the connection,
     # so it must never be sent even when partner_code is set.
     assert "partner" not in str(connect_args.get("url"))
+
+
+async def test_concurrent_websocket_connects_keep_the_first_attempt(monkeypatch):
+    """A reconnect request must not tear down a connection still in progress."""
+    import socketio
+
+    first_started = asyncio.Event()
+    finish_connect = asyncio.Event()
+    sockets = []
+
+    class _FakeSocket:
+        def __init__(self, **_kwargs: object) -> None:
+            self.connected = False
+            self.disconnected = False
+            self.handlers = {}
+            sockets.append(self)
+
+        def on(self, event: str, handler: object) -> None:
+            self.handlers[event] = handler
+
+        async def connect(self, *_args: object, **_kwargs: object) -> None:
+            first_started.set()
+            await finish_connect.wait()
+            if self.disconnected:
+                raise ConnectionError("Connection error")
+            self.connected = True
+            await self.handlers["connect"]()
+
+        async def disconnect(self) -> None:
+            self.disconnected = True
+            self.connected = False
+
+    monkeypatch.setattr(socketio, "AsyncClient", _FakeSocket)
+    ws = HomelyWebSocket(
+        location_id="loc-1", token="token", on_data_update=lambda _data: None
+    )
+
+    first = asyncio.create_task(ws.connect())
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+    ws.request_reconnect("poll detected disconnected websocket")
+    await asyncio.sleep(0)
+    finish_connect.set()
+
+    assert await first is True
+    await asyncio.sleep(0)
+    assert len(sockets) == 1
+    assert sockets[0].disconnected is False
+
+
+async def test_cancelling_waiting_connect_does_not_cancel_active_connect(monkeypatch):
+    """A cancelled reconnect must leave the original attempt undisturbed."""
+    import socketio
+
+    first_started = asyncio.Event()
+    finish_connect = asyncio.Event()
+    sockets = []
+
+    class _FakeSocket:
+        def __init__(self, **_kwargs: object) -> None:
+            self.connected = False
+            self.disconnected = False
+            sockets.append(self)
+
+        def on(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def connect(self, *_args: object, **_kwargs: object) -> None:
+            first_started.set()
+            await finish_connect.wait()
+            if self.disconnected:
+                raise ConnectionError("Connection error")
+            self.connected = True
+
+        async def disconnect(self) -> None:
+            self.disconnected = True
+            self.connected = False
+
+    monkeypatch.setattr(socketio, "AsyncClient", _FakeSocket)
+    ws = HomelyWebSocket(
+        location_id="loc-1", token="token", on_data_update=lambda _data: None
+    )
+    monkeypatch.setattr(ws, "_start_reconnect_loop", lambda _reason=None: None)
+
+    first = asyncio.create_task(ws.connect())
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+    waiting = asyncio.create_task(ws.connect(from_reconnect_loop=True))
+    await asyncio.sleep(0)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    finish_connect.set()
+
+    assert await first is True
+    assert len(sockets) == 1
+    assert sockets[0].disconnected is False
 
 
 async def test_websocket_sync_token_only_reconnects_when_transport_is_down():

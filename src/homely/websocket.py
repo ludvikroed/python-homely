@@ -101,6 +101,7 @@ class HomelyWebSocket:
         self.socket: Any | None = None
         self._is_closing = False
         self._cleaning_up_socket = False
+        self._connect_lock = asyncio.Lock()
         self._reconnect_task: asyncio.Task[None] | None = None
         self._reconnect_interval = self._reconnect_interval_for_attempt(1)
         self._reconnect_warn_every = 12
@@ -337,6 +338,11 @@ class HomelyWebSocket:
 
     async def connect(self, from_reconnect_loop: bool = False) -> bool:
         """Connect to websocket server."""
+        async with self._connect_lock:
+            return await self._connect_unlocked(from_reconnect_loop)
+
+    async def _connect_unlocked(self, from_reconnect_loop: bool) -> bool:
+        """Run one connection attempt at a time, including socket cleanup."""
         if self._is_closing:
             _LOGGER.debug("Skipping websocket connect during shutdown %s", self._ctx())
             return False
