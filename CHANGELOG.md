@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-21
+
+### Fixed
+
+- Serialized WebSocket connection attempts so a reconnect cannot interrupt an
+  in-progress initial connection and log a misleading connection error.
+
 ## [0.1.2] - 2026-03-19
 
 ### Added
