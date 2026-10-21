@@ -635,6 +635,50 @@ async def test_cancelling_waiting_connect_does_not_cancel_active_connect(monkeyp
     assert sockets[0].disconnected is False
 
 
+async def test_reconnect_waiting_for_failed_initial_connect_can_recover(monkeypatch):
+    """Serializing attempts must not suppress a needed retry."""
+    import socketio
+
+    first_started = asyncio.Event()
+    finish_first = asyncio.Event()
+    reconnected = asyncio.Event()
+    sockets = []
+
+    class _FakeSocket:
+        def __init__(self, **_kwargs: object) -> None:
+            self.connected = False
+            sockets.append(self)
+
+        def on(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def connect(self, *_args: object, **_kwargs: object) -> None:
+            if self is sockets[0]:
+                first_started.set()
+                await finish_first.wait()
+                raise ConnectionError("Connection error")
+            self.connected = True
+            reconnected.set()
+
+        async def disconnect(self) -> None:
+            self.connected = False
+
+    monkeypatch.setattr(socketio, "AsyncClient", _FakeSocket)
+    ws = HomelyWebSocket(
+        location_id="loc-1", token="token", on_data_update=lambda _data: None
+    )
+
+    first = asyncio.create_task(ws.connect())
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+    ws.request_reconnect("poll detected disconnected websocket")
+    finish_first.set()
+
+    assert await first is False
+    await asyncio.wait_for(reconnected.wait(), timeout=1)
+    assert ws.is_connected() is True
+    assert len(sockets) == 2
+
+
 async def test_websocket_sync_token_only_reconnects_when_transport_is_down():
     """Token sync should not nudge healthy sockets, but should reconnect dead ones."""
     ws = HomelyWebSocket(
